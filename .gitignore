@@ -1,0 +1,10 @@
+.env
+node_modules/
+.state/
+playwright-report/
+test-results/*
+!test-results/.gitkeep
+reports/history/*
+!reports/history/.gitkeep
+reports/latest/*
+!reports/latest/.gitkeep

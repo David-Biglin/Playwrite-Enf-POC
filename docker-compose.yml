@@ -1,0 +1,46 @@
+services:
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.61.0-jammy
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+    user: "${PLAYWRIGHT_UID:-1000}:${PLAYWRIGHT_GID:-1000}"
+    init: true
+    shm_size: 1gb
+    restart: unless-stopped
+    networks:
+      - playwright_internal
+    environment:
+      CI: "1"
+      PLAYWRIGHT_BASE_URL: "${PLAYWRIGHT_BASE_URL:-https://example.com}"
+      PLAYWRIGHT_WORKERS: "${PLAYWRIGHT_WORKERS:-2}"
+    volumes:
+      - ./:/workspace
+
+  report-viewer:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - playwright
+    networks:
+      - playwright_internal
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${REPORT_BIND_IP:-127.0.0.1}:${REPORT_PORT:-8088}:80"
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    volumes:
+      - ./reports/latest:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  playwright_internal:
+    driver: bridge
