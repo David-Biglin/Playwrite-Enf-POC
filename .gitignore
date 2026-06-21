@@ -1,4 +1,6 @@
 .env
+config/environments/*.env
+!config/environments/*.env.example
 node_modules/
 .state/
 playwright-report/

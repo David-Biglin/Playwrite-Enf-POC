@@ -17,6 +17,8 @@ It keeps the moving parts small:
 - Host user and group mapping so generated files stay editable by the team account
 - Automatic dependency refresh when `package-lock.json` changes
 - Portable hardening on the report viewer container
+- Platform-specific folders and tags for D365, HR, and Asset testing
+- Published landing page that links to the latest full Playwright report and recent history
 
 The compose file has safe defaults and will start even if `.env` is missing:
 
@@ -26,6 +28,7 @@ The compose file has safe defaults and will start even if `.env` is missing:
 - `PLAYWRIGHT_WORKERS` defaults to `2`
 - `PLAYWRIGHT_UID` and `PLAYWRIGHT_GID` are auto-detected by `run-tests.sh` if not set
 - `REPORT_HISTORY_LIMIT` defaults to `10`
+- `PLAYWRIGHT_PLATFORM`, `PLAYWRIGHT_ENVIRONMENT`, and `PLAYWRIGHT_SUITE` default to broad values and can be overridden per run
 
 For a LAN-visible deployment, copy `.env.example` to `.env` and set the host IP you want to bind.
 
@@ -33,7 +36,10 @@ For a LAN-visible deployment, copy `.env.example` to `.env` and set the host IP 
 
 - Run Playwright smoke tests and regression suites in Docker
 - Point the same test suite at different environments by changing `.env`
+- Load a target-specific environment file for D365, HR, or Asset testing
+- Filter execution by platform and suite without editing spec files
 - Publish the latest HTML report over HTTP for team review
+- Publish a simple landing page for wider internal visibility
 - Keep historical run folders for troubleshooting and audit
 - Capture raw Playwright artifacts such as screenshots and traces
 - Allow test authors to add new `*.spec.ts` files without changing the platform plumbing
@@ -76,6 +82,11 @@ Recommended host profile:
 
 ```text
 /opt/playwright-regression/
+├── config/
+│   └── environments/
+│       ├── assets-uat.env.example
+│       ├── d365-uat.env.example
+│       └── hr-uat.env.example
 ├── docker-compose.yml
 ├── .env.example
 ├── .gitignore
@@ -90,18 +101,21 @@ Recommended host profile:
 ├── run-tests.sh
 ├── test-results/
 └── tests/
-    └── example.spec.ts
+    ├── assets/
+    ├── d365/
+    └── hr/
 ```
 
 ## What each file does
 
 - `docker-compose.yml`: Defines the Playwright runner container and the NGINX report viewer using the official Microsoft Playwright image.
+- `config/environments/*.env.example`: Starter target definitions for D365, HR, and Asset environments.
 - `.env.example`: Template values for bind IP, target URL, ownership mapping, and report retention.
 - `.gitignore`: Keeps generated reports, test artifacts, dependencies, and local `.env` out of Git.
 - `package.json`: Holds the Playwright dependency and helper scripts.
 - `package-lock.json`: Pins the dependency versions for repeatable first-run installs.
 - `playwright.config.ts`: Configures the browser project, artifacts, timeouts, and HTML reporting.
-- `tests/example.spec.ts`: Sample test that proves the platform works against a public site.
+- `tests/d365/`, `tests/hr/`, `tests/assets/`: Platform-specific spec folders that can grow independently.
 - `run-tests.sh`: Manual trigger script that runs the suite, archives the report, and publishes the latest HTML report.
 - `nginx/default.conf`: Serves the latest report cleanly and disables directory browsing.
 - `reports/history/`: Timestamped archive of previous HTML reports and test results.
@@ -137,6 +151,9 @@ REPORT_PORT=8088
 PLAYWRIGHT_BASE_URL=https://example.com
 PLAYWRIGHT_WORKERS=2
 REPORT_HISTORY_LIMIT=10
+PLAYWRIGHT_PLATFORM=all
+PLAYWRIGHT_ENVIRONMENT=local
+PLAYWRIGHT_SUITE=all
 ```
 
 Example for a LAN-visible host:
@@ -147,6 +164,9 @@ REPORT_PORT=8088
 PLAYWRIGHT_BASE_URL=https://internal-test-target.example
 PLAYWRIGHT_WORKERS=4
 REPORT_HISTORY_LIMIT=20
+PLAYWRIGHT_PLATFORM=all
+PLAYWRIGHT_ENVIRONMENT=uat
+PLAYWRIGHT_SUITE=smoke
 ```
 
 If you need explicit Linux ownership mapping, also set:
@@ -160,7 +180,31 @@ Suggested team convention:
 
 - Keep `.env.example` in Git as the contract.
 - Create a real `.env` per host and per environment.
+- Use `config/environments/*.env.example` as the template for target-specific settings.
 - Put credentials in a separate untracked secret source when tests move beyond anonymous smoke checks.
+
+## Environment file pattern
+
+There are now two configuration layers:
+
+- `.env`: host-level defaults such as report bind IP, port, and broad execution defaults
+- `config/environments/<target>.env`: target-level settings for a real test destination such as D365 UAT or HR UAT
+
+Examples shipped in the repo:
+
+- `config/environments/d365-uat.env.example`
+- `config/environments/hr-uat.env.example`
+- `config/environments/assets-uat.env.example`
+
+Recommended usage:
+
+```bash
+cp config/environments/d365-uat.env.example config/environments/d365-uat.env
+cp config/environments/hr-uat.env.example config/environments/hr-uat.env
+cp config/environments/assets-uat.env.example config/environments/assets-uat.env
+```
+
+The real `*.env` files are ignored by Git so secrets and real internal URLs stay local.
 
 ## Environment variables
 
@@ -173,6 +217,9 @@ The platform is driven by a small `.env` contract:
 - `PLAYWRIGHT_UID`: Optional host user ID for file ownership mapping.
 - `PLAYWRIGHT_GID`: Optional host group ID for file ownership mapping.
 - `REPORT_HISTORY_LIMIT`: Number of historical runs to keep under `reports/history/`.
+- `PLAYWRIGHT_PLATFORM`: Broad platform selector such as `d365`, `hr`, `assets`, or `all`.
+- `PLAYWRIGHT_ENVIRONMENT`: Label such as `dev`, `uat`, `preprod`, or `prodlike`.
+- `PLAYWRIGHT_SUITE`: Broad suite selector such as `smoke`, `regression`, or `all`.
 
 For most Linux team hosts, you can leave `PLAYWRIGHT_UID` and `PLAYWRIGHT_GID` unset and let `run-tests.sh` auto-detect them.
 
@@ -184,8 +231,9 @@ For a brand-new teammate, these are the shortest steps to a working platform:
 git clone git@github.com:David-Biglin/Playwrite-Enf-POC.git
 cd Playwrite-Enf-POC
 cp .env.example .env
+cp config/environments/d365-uat.env.example config/environments/d365-uat.env
 docker compose up -d
-./run-tests.sh
+./run-tests.sh --env-file config/environments/d365-uat.env
 docker compose ps
 ```
 
@@ -200,6 +248,8 @@ If `REPORT_BIND_IP` is set to a LAN address, use:
 ```text
 http://<server-ip>:8088
 ```
+
+The root page is now a lightweight status landing page. From there, the team can jump into the full Playwright HTML report and recent run history.
 
 ## Start the environment
 
@@ -246,10 +296,33 @@ Useful commands:
 
 ```bash
 ./run-tests.sh
+./run-tests.sh --platform d365 --suite smoke --environment uat
+./run-tests.sh --env-file config/environments/hr-uat.env
 npm run test:smoke
+npm run test:d365
 docker compose ps
 docker compose logs -f report-viewer
 ```
+
+## Selective execution
+
+The runner now supports deliberate execution targeting.
+
+Examples:
+
+```bash
+./run-tests.sh --platform d365 --suite smoke --environment uat
+./run-tests.sh --platform hr --suite smoke --environment uat
+./run-tests.sh --platform assets --suite regression --environment preprod
+./run-tests.sh --env-file config/environments/d365-uat.env
+./run-tests.sh --grep @smoke
+```
+
+How it works:
+
+- platform tests live in `tests/d365/`, `tests/hr/`, and `tests/assets/`
+- spec titles can include tags such as `@d365`, `@hr`, `@assets`, `@smoke`, and `@regression`
+- `run-tests.sh` converts the chosen platform and suite into the appropriate Playwright grep filter
 
 ## First-run validation
 
@@ -257,7 +330,8 @@ After the first execution, confirm the platform is actually working:
 
 1. `./run-tests.sh` exits with code `0`
 2. `reports/latest/metadata.txt` exists and shows the latest run timestamp
-3. `reports/latest/` contains Playwright HTML report files
+3. `reports/latest/index.html` shows the platform landing page
+4. `reports/latest/report/` contains the full Playwright HTML report
 4. `test-results/` contains generated artifacts
 5. the report viewer opens successfully in a browser
 
@@ -265,7 +339,7 @@ Useful checks:
 
 ```bash
 cat reports/latest/metadata.txt
-find reports/latest -maxdepth 2 -type f | head
+find reports/latest -maxdepth 3 -type f | head
 find test-results -maxdepth 2 -type f | head
 curl http://127.0.0.1:8088
 ```
@@ -297,9 +371,9 @@ Then browse to `http://127.0.0.1:8088`.
 A sensible baseline workflow for the team is:
 
 1. clone the repository
-2. create a local `.env` for the target environment
+2. create a local `.env` for the host and a target environment file under `config/environments/`
 3. start the containers with `docker compose up -d`
-4. run `./run-tests.sh`
+4. run `./run-tests.sh --env-file <target-file>`
 5. review the HTML report
 6. add or update tests in `tests/`
 7. rerun and confirm the report reflects the change
@@ -315,9 +389,9 @@ Example pattern:
 ```ts
 import { expect, test } from '@playwright/test';
 
-test('homepage check', async ({ page }) => {
-  await page.goto('https://your-site.example');
-  await expect(page).toHaveTitle(/Expected title/);
+test('@d365 @smoke homepage check', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/.+/);
 });
 ```
 
@@ -336,6 +410,7 @@ npm run test:smoke
 Recommended authoring conventions:
 
 - use `page.goto('/')` plus `PLAYWRIGHT_BASE_URL` instead of hard-coded hostnames in tests
+- keep platform-specific tests under the matching platform folder
 - keep tests deterministic and avoid relying on manual timing
 - make assertions explicit so failures are readable in the HTML report
 - keep credentials and environment-specific secrets outside committed spec files

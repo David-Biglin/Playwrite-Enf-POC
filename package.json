@@ -2,9 +2,13 @@
   "name": "playwright-regression-poc",
   "version": "1.0.0",
   "private": true,
-  "description": "Docker-based Playwright regression testing proof of concept",
+  "description": "Docker-based Playwright regression testing starter for internal platforms",
   "scripts": {
-    "test:smoke": "playwright test tests/example.spec.ts",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:regression": "playwright test --grep @regression",
+    "test:d365": "playwright test tests/d365",
+    "test:hr": "playwright test tests/hr",
+    "test:assets": "playwright test tests/assets",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "report": "playwright show-report playwright-report --host 0.0.0.0 --port 9323"

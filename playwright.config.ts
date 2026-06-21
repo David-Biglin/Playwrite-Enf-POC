@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'https://example.com';
+const environmentName = process.env.PLAYWRIGHT_ENVIRONMENT || 'local';
+const platformName = process.env.PLAYWRIGHT_PLATFORM || 'shared';
 const workerOverride = Number.parseInt(process.env.PLAYWRIGHT_WORKERS || '', 10);
 const workers = Number.isFinite(workerOverride) && workerOverride > 0
   ? workerOverride
@@ -21,6 +23,11 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
   outputDir: 'test-results',
+  metadata: {
+    environment: environmentName,
+    platform: platformName,
+    baseURL,
+  },
   use: {
     baseURL,
     trace: 'on',
