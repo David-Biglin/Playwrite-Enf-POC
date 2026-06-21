@@ -2,6 +2,12 @@
 
 This is a team-ready, Docker-based Playwright regression testing starter for an internal IT / Digital team.
 
+It is designed to answer a very practical need:
+
+- give the team a repeatable way to run browser tests without installing Playwright and browser dependencies directly on the host
+- make results visible through a simple HTML report
+- keep the platform easy to clone, configure, and re-run on another Linux server
+
 It keeps the moving parts small:
 
 - A long-running Playwright runner container based on the official Microsoft Playwright image
@@ -22,6 +28,49 @@ The compose file has safe defaults and will start even if `.env` is missing:
 - `REPORT_HISTORY_LIMIT` defaults to `10`
 
 For a LAN-visible deployment, copy `.env.example` to `.env` and set the host IP you want to bind.
+
+## What this platform can do
+
+- Run Playwright smoke tests and regression suites in Docker
+- Point the same test suite at different environments by changing `.env`
+- Publish the latest HTML report over HTTP for team review
+- Keep historical run folders for troubleshooting and audit
+- Capture raw Playwright artifacts such as screenshots and traces
+- Allow test authors to add new `*.spec.ts` files without changing the platform plumbing
+
+## Intended use
+
+This repository is a starter platform, not a finished test pack.
+
+Use it when you want:
+
+- a shared internal Playwright runner
+- lightweight environment-specific browser testing
+- manual or scheduled regression execution
+- a clean baseline for building a broader UI automation suite
+
+It is not trying to be:
+
+- a full CI/CD pipeline by itself
+- a secret-management solution
+- a completed page-object test framework
+
+## Prerequisites
+
+Before standing this up, make sure the target host has:
+
+- Docker installed and running
+- either `docker compose` or `docker-compose`
+- Git
+- network access to the target application under test
+- a user account that can run Docker commands
+
+Recommended host profile:
+
+- Linux server or VM
+- at least 2 CPU cores
+- at least 4 GB RAM for light smoke/regression use
+- a stable hostname or IP if the HTML report needs to be shared on the LAN
 
 ## Folder structure
 
@@ -62,9 +111,19 @@ For a LAN-visible deployment, copy `.env.example` to `.env` and set the host IP 
 
 ## Setup on a fresh server
 
+Clone the repository first:
+
+```bash
+git clone git@github.com:David-Biglin/Playwrite-Enf-POC.git
+cd Playwrite-Enf-POC
+```
+
+If you prefer the target path shown in the examples below:
+
 ```bash
 mkdir -p /opt/playwright-regression
 cd /opt/playwright-regression
+git clone git@github.com:David-Biglin/Playwrite-Enf-POC.git .
 cp .env.example .env
 ```
 
@@ -103,6 +162,45 @@ Suggested team convention:
 - Create a real `.env` per host and per environment.
 - Put credentials in a separate untracked secret source when tests move beyond anonymous smoke checks.
 
+## Environment variables
+
+The platform is driven by a small `.env` contract:
+
+- `REPORT_BIND_IP`: IP address to bind the NGINX report viewer to. Use `127.0.0.1` for local-only access.
+- `REPORT_PORT`: Host port for the HTML report viewer.
+- `PLAYWRIGHT_BASE_URL`: Base URL used by Playwright tests when they call `page.goto('/')`.
+- `PLAYWRIGHT_WORKERS`: Parallel worker count used during test execution.
+- `PLAYWRIGHT_UID`: Optional host user ID for file ownership mapping.
+- `PLAYWRIGHT_GID`: Optional host group ID for file ownership mapping.
+- `REPORT_HISTORY_LIMIT`: Number of historical runs to keep under `reports/history/`.
+
+For most Linux team hosts, you can leave `PLAYWRIGHT_UID` and `PLAYWRIGHT_GID` unset and let `run-tests.sh` auto-detect them.
+
+## Quick start
+
+For a brand-new teammate, these are the shortest steps to a working platform:
+
+```bash
+git clone git@github.com:David-Biglin/Playwrite-Enf-POC.git
+cd Playwrite-Enf-POC
+cp .env.example .env
+docker compose up -d
+./run-tests.sh
+docker compose ps
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8088
+```
+
+If `REPORT_BIND_IP` is set to a LAN address, use:
+
+```text
+http://<server-ip>:8088
+```
+
 ## Start the environment
 
 ```bash
@@ -116,6 +214,14 @@ This starts:
 - the `report-viewer` service
 
 If `.env` is absent, the report viewer will bind to `127.0.0.1:8088` by default.
+
+To confirm both services are healthy:
+
+```bash
+docker compose ps
+docker compose logs --tail=50 report-viewer
+docker compose logs --tail=50 playwright
+```
 
 ## Run the tests manually
 
@@ -145,6 +251,25 @@ docker compose ps
 docker compose logs -f report-viewer
 ```
 
+## First-run validation
+
+After the first execution, confirm the platform is actually working:
+
+1. `./run-tests.sh` exits with code `0`
+2. `reports/latest/metadata.txt` exists and shows the latest run timestamp
+3. `reports/latest/` contains Playwright HTML report files
+4. `test-results/` contains generated artifacts
+5. the report viewer opens successfully in a browser
+
+Useful checks:
+
+```bash
+cat reports/latest/metadata.txt
+find reports/latest -maxdepth 2 -type f | head
+find test-results -maxdepth 2 -type f | head
+curl http://127.0.0.1:8088
+```
+
 ## View the reports
 
 If using localhost-only bind:
@@ -166,6 +291,20 @@ ssh -L 8088:127.0.0.1:8088 <server>
 ```
 
 Then browse to `http://127.0.0.1:8088`.
+
+## Typical team workflow
+
+A sensible baseline workflow for the team is:
+
+1. clone the repository
+2. create a local `.env` for the target environment
+3. start the containers with `docker compose up -d`
+4. run `./run-tests.sh`
+5. review the HTML report
+6. add or update tests in `tests/`
+7. rerun and confirm the report reflects the change
+
+For multiple environments, keep the same variable names and swap values per host or per deployment.
 
 ## Add new Playwright tests
 
@@ -193,6 +332,46 @@ For a minimal post-change check, you can also run:
 ```bash
 npm run test:smoke
 ```
+
+Recommended authoring conventions:
+
+- use `page.goto('/')` plus `PLAYWRIGHT_BASE_URL` instead of hard-coded hostnames in tests
+- keep tests deterministic and avoid relying on manual timing
+- make assertions explicit so failures are readable in the HTML report
+- keep credentials and environment-specific secrets outside committed spec files
+- start with smoke coverage for critical journeys before expanding into deeper regression packs
+
+## Updating dependencies
+
+The runner automatically refreshes dependencies when `package-lock.json` changes.
+
+Typical update flow:
+
+```bash
+npm install <package-name> --save-dev
+git add package.json package-lock.json
+git commit -m "Add <package-name>"
+./run-tests.sh
+```
+
+If the team upgrades Playwright itself, rerun the platform and confirm the first install completes cleanly inside the container.
+
+## Running this on a schedule
+
+This repository is suitable for manual runs now, and can also be scheduled later.
+
+Typical options:
+
+- host cron calling `./run-tests.sh`
+- a CI job on a self-hosted runner
+- a central test host that publishes the report URL to the team
+
+If you schedule it, also decide:
+
+- which environment the job targets
+- how credentials are injected
+- how long to keep history
+- how the team is notified on failure
 
 ## Troubleshooting
 
